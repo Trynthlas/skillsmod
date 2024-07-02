@@ -140,8 +140,8 @@ public class KillEntityExperienceSource implements ExperienceSource {
 
 	private KillEntityExperienceSource(Calculation<Data> calculation, Boolean teamSharedExperience, AntiFarming antiFarming) {
 		this.calculation = calculation;
-        this.teamSharedExperience = teamSharedExperience;
-        this.antiFarming = antiFarming;
+		this.teamSharedExperience = teamSharedExperience;
+		this.antiFarming = antiFarming;
 	}
 
 	public static void register() {
@@ -241,9 +241,9 @@ public class KillEntityExperienceSource implements ExperienceSource {
 
 	public int applyTeamSharedExperience(ServerPlayerEntity player, int xpValue) {
 		var playerTeam = player.getScoreboardTeam();
-        if (!teamSharedExperience || playerTeam == null) {
-            return xpValue;
-        }
+		if (!teamSharedExperience || playerTeam == null) {
+			return xpValue;
+		}
 
 		List<ServerPlayerEntity> teammatesInRange = player.getServerWorld()
 				.getPlayers(p -> p.isTeamPlayer(playerTeam))
@@ -254,7 +254,7 @@ public class KillEntityExperienceSource implements ExperienceSource {
 		teammatesInRange.forEach(p -> SkillsAPI.updateExperienceSources(p, KillEntityExperienceSource.class, es -> sharedXpValue));
 
 		return sharedXpValue;
-    }
+	}
 
 	private static boolean isTeammateInShareRange(ServerPlayerEntity player, ServerPlayerEntity teammate) {
 		return player.getPos().distanceTo(teammate.getPos()) <= MAX_TEAMMATE_SHARE_DISTANCE;
