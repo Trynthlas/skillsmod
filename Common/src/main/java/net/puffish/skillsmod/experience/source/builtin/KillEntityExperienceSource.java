@@ -4,6 +4,7 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.item.ItemStack;
+import net.minecraft.scoreboard.Team;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 import net.puffish.skillsmod.SkillsMod;
@@ -133,12 +134,10 @@ public class KillEntityExperienceSource implements ExperienceSource {
 	}
 
 	private final Calculation<Data> calculation;
-	private final Boolean teamSharedExperience;
+	private final TeamSharedExperience teamSharedExperience;
 	private final AntiFarming antiFarming;
 
-	private static final double MAX_TEAMMATE_SHARE_DISTANCE = 100.0;
-
-	private KillEntityExperienceSource(Calculation<Data> calculation, Boolean teamSharedExperience, AntiFarming antiFarming) {
+	private KillEntityExperienceSource(Calculation<Data> calculation, TeamSharedExperience teamSharedExperience, AntiFarming antiFarming) {
 		this.calculation = calculation;
 		this.teamSharedExperience = teamSharedExperience;
 		this.antiFarming = antiFarming;
@@ -163,9 +162,13 @@ public class KillEntityExperienceSource implements ExperienceSource {
 				.ifFailure(problems::add)
 				.getSuccess();
 
-		var optTeamSharedExperience = rootObject.getBoolean("team_shared_experience")
+		var optTeamSharedExperience = rootObject.get("team_shared_experience")
 				.getSuccess() // ignore failure because this property is optional
-				.orElse(false);
+				.flatMap(element -> TeamSharedExperience.parse(element)
+						.ifFailure(problems::add)
+						.getSuccess()
+						.flatMap(Function.identity())
+				);
 
 		var optAntiFarming = rootObject.get("anti_farming")
 				.getSuccess() // ignore failure because this property is optional
@@ -178,11 +181,33 @@ public class KillEntityExperienceSource implements ExperienceSource {
 		if (problems.isEmpty()) {
 			return Result.success(new KillEntityExperienceSource(
 					optCalculation.orElseThrow(),
-					optTeamSharedExperience,
+					optTeamSharedExperience.orElse(null),
 					optAntiFarming.orElse(null)
 			));
 		} else {
 			return Result.failure(Problem.combine(problems));
+		}
+	}
+
+	public record TeamSharedExperience(double maxShareDistance) {
+		public static Result<Optional<TeamSharedExperience>, Problem> parse(JsonElement rootElement) {
+			return rootElement.getAsObject().andThen(TeamSharedExperience::parse);
+		}
+
+		public static Result<Optional<TeamSharedExperience>, Problem> parse(JsonObject rootObject) {
+			var problems = new ArrayList<Problem>();
+
+			var optMaxShareDistance = rootObject.getDouble("max_share_distance")
+					.ifFailure(problems::add)
+					.getSuccess();
+
+			if (problems.isEmpty()) {
+				return Result.success(Optional.of(new TeamSharedExperience(
+						optMaxShareDistance.orElseThrow()
+				)));
+			} else {
+				return Result.failure(Problem.combine(problems));
+			}
 		}
 	}
 
@@ -231,8 +256,8 @@ public class KillEntityExperienceSource implements ExperienceSource {
 		));
 	}
 
-	public Boolean isTeamSharedExperience() {
-		return teamSharedExperience;
+	public Optional<TeamSharedExperience> getTeamSharedExperience() {
+		return Optional.ofNullable(teamSharedExperience);
 	}
 
 	public Optional<AntiFarming> getAntiFarming() {
@@ -241,7 +266,7 @@ public class KillEntityExperienceSource implements ExperienceSource {
 
 	public int applyTeamSharedExperience(ServerPlayerEntity player, int xpValue) {
 		var playerTeam = player.getScoreboardTeam();
-		if (!teamSharedExperience || playerTeam == null) {
+		if (getTeamSharedExperience().isEmpty() || playerTeam == null) {
 			return xpValue;
 		}
 
@@ -256,8 +281,8 @@ public class KillEntityExperienceSource implements ExperienceSource {
 		return sharedXpValue;
 	}
 
-	private static boolean isTeammateInShareRange(ServerPlayerEntity player, ServerPlayerEntity teammate) {
-		return player.getPos().distanceTo(teammate.getPos()) <= MAX_TEAMMATE_SHARE_DISTANCE;
+	private boolean isTeammateInShareRange(ServerPlayerEntity player, ServerPlayerEntity teammate) {
+		return player.getPos().distanceTo(teammate.getPos()) <= getTeamSharedExperience().orElseGet(() -> new TeamSharedExperience(0)).maxShareDistance;
 	}
 
 	@Override
