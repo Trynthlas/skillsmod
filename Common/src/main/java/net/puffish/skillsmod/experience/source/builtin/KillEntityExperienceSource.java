@@ -250,7 +250,7 @@ public class KillEntityExperienceSource implements ExperienceSource {
 				.stream().filter(p -> p != player && isTeammateInShareRange(player, p))
 				.collect(Collectors.toCollection(ArrayList::new));
 
-		int sharedXpValue = xpValue / teammatesInRange.size();
+		int sharedXpValue = Math.min(xpValue / teammatesInRange.size(), 1);
 		teammatesInRange.forEach(p -> SkillsAPI.updateExperienceSources(p, KillEntityExperienceSource.class, es -> sharedXpValue));
 
 		return sharedXpValue;
