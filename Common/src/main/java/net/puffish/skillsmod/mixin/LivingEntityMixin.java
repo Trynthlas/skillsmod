@@ -44,18 +44,17 @@ public abstract class LivingEntityMixin {
 			worldChunk.antiFarmingCleanupOutdated();
 			SkillsAPI.updateExperienceSources(player, experienceSource -> {
 				if (experienceSource instanceof KillEntityExperienceSource entityExperienceSource) {
-					if (entityExperienceSource
-							.getAntiFarming()
+					if (entityExperienceSource.getAntiFarming()
 							.map(worldChunk::antiFarmingAddAndCheck)
 							.orElse(true)
 					) {
-						return entityExperienceSource.getValue(player, entity, weapon, source, entityDroppedXp);
+						int xpValue = entityExperienceSource.getValue(player, entity, weapon, source, entityDroppedXp);
+						return entityExperienceSource.applyTeamSharedExperience(player, xpValue);
 					}
 				}
 				return 0;
 			});
 		}
-
 	}
 
 	@ModifyArg(method = "dropXp", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/ExperienceOrbEntity;spawn(Lnet/minecraft/server/world/ServerWorld;Lnet/minecraft/util/math/Vec3d;I)V"), index = 2)

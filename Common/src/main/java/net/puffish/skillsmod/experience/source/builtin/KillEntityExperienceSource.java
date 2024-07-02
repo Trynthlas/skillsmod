@@ -32,8 +32,10 @@ import net.puffish.skillsmod.calculation.operation.builtin.legacy.LegacyEntityTy
 import net.puffish.skillsmod.calculation.operation.builtin.legacy.LegacyItemTagCondition;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class KillEntityExperienceSource implements ExperienceSource {
 	private static final Identifier ID = SkillsMod.createIdentifier("kill_entity");
@@ -44,6 +46,11 @@ public class KillEntityExperienceSource implements ExperienceSource {
 				SkillsMod.createIdentifier("player"),
 				BuiltinPrototypes.PLAYER,
 				OperationFactory.create(Data::player)
+		);
+		PROTOTYPE.registerOperation(
+				SkillsMod.createIdentifier("is_on_team"),
+				BuiltinPrototypes.BOOLEAN,
+				OperationFactory.create(data -> data.player.getScoreboardTeam() != null)
 		);
 		PROTOTYPE.registerOperation(
 				SkillsMod.createIdentifier("weapon_item_stack"),
@@ -126,11 +133,15 @@ public class KillEntityExperienceSource implements ExperienceSource {
 	}
 
 	private final Calculation<Data> calculation;
-	private final Optional<AntiFarming> optAntiFarming;
+	private final Boolean teamSharedExperience;
+	private final AntiFarming antiFarming;
 
-	private KillEntityExperienceSource(Calculation<Data> calculation, Optional<AntiFarming> optAntiFarming) {
+	private static final double MAX_TEAMMATE_SHARE_DISTANCE = 100.0;
+
+	private KillEntityExperienceSource(Calculation<Data> calculation, Boolean teamSharedExperience, AntiFarming antiFarming) {
 		this.calculation = calculation;
-		this.optAntiFarming = optAntiFarming;
+        this.teamSharedExperience = teamSharedExperience;
+        this.antiFarming = antiFarming;
 	}
 
 	public static void register() {
@@ -152,6 +163,10 @@ public class KillEntityExperienceSource implements ExperienceSource {
 				.ifFailure(problems::add)
 				.getSuccess();
 
+		var optTeamSharedExperience = rootObject.getBoolean("team_shared_experience")
+				.getSuccess() // ignore failure because this property is optional
+				.orElse(false);
+
 		var optAntiFarming = rootObject.get("anti_farming")
 				.getSuccess() // ignore failure because this property is optional
 				.flatMap(element -> AntiFarming.parse(element)
@@ -163,7 +178,8 @@ public class KillEntityExperienceSource implements ExperienceSource {
 		if (problems.isEmpty()) {
 			return Result.success(new KillEntityExperienceSource(
 					optCalculation.orElseThrow(),
-					optAntiFarming
+					optTeamSharedExperience,
+					optAntiFarming.orElse(null)
 			));
 		} else {
 			return Result.failure(Problem.combine(problems));
@@ -215,8 +231,33 @@ public class KillEntityExperienceSource implements ExperienceSource {
 		));
 	}
 
+	public Boolean isTeamSharedExperience() {
+		return teamSharedExperience;
+	}
+
 	public Optional<AntiFarming> getAntiFarming() {
-		return optAntiFarming;
+		return Optional.ofNullable(antiFarming);
+	}
+
+	public int applyTeamSharedExperience(ServerPlayerEntity player, int xpValue) {
+		var playerTeam = player.getScoreboardTeam();
+        if (!teamSharedExperience || playerTeam == null) {
+            return xpValue;
+        }
+
+		List<ServerPlayerEntity> teammatesInRange = player.getServerWorld()
+				.getPlayers(p -> p.isTeamPlayer(playerTeam))
+				.stream().filter(p -> p != player && isTeammateInShareRange(player, p))
+				.collect(Collectors.toCollection(ArrayList::new));
+
+		int sharedXpValue = xpValue / teammatesInRange.size();
+		teammatesInRange.forEach(p -> SkillsAPI.updateExperienceSources(p, KillEntityExperienceSource.class, es -> sharedXpValue));
+
+		return sharedXpValue;
+    }
+
+	private static boolean isTeammateInShareRange(ServerPlayerEntity player, ServerPlayerEntity teammate) {
+		return player.getPos().distanceTo(teammate.getPos()) <= MAX_TEAMMATE_SHARE_DISTANCE;
 	}
 
 	@Override
